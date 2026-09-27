@@ -1,0 +1,74 @@
+# Trusted domains for web search. Tavily only returns results from these domains
+# (passed as include_domains). Edit freely: add or remove lines, keep the "- domain"
+# format. Group names are just for readability; all groups are merged.
+#
+# Subdomains are included automatically (e.g. "bbc.com" also covers www.bbc.com).
+# Changing this list changes the cache key, so you'll get fresh results.
+
+wire_services:
+  - reuters.com
+  - apnews.com
+  - afp.com
+
+fact_checkers:
+  - snopes.com
+  - politifact.com
+  - factcheck.org
+  - fullfact.org
+  - factcheck.afp.com
+  - leadstories.com
+  - checkyourfact.com
+  - healthfeedback.org
+  - sciencefeedback.co
+
+major_outlets:
+  - bbc.com
+  - bbc.co.uk
+  - npr.org
+  - pbs.org
+  - theguardian.com
+  - nytimes.com
+  - washingtonpost.com
+  - wsj.com
+  - ft.com
+  - economist.com
+  - bloomberg.com
+  - cnn.com
+  - cbsnews.com
+  - nbcnews.com
+  - abcnews.go.com
+  - aljazeera.com
+  - dw.com
+  - france24.com
+  - politico.com
+  - axios.com
+
+science_and_health:
+  - who.int
+  - cdc.gov
+  - nih.gov
+  - fda.gov
+  - nature.com
+  - science.org
+  - thelancet.com
+  - nejm.org
+  - cochrane.org
+
+official_and_data:
+  - un.org
+  - worldbank.org
+  - imf.org
+  - oecd.org
+  - europa.eu
+  - census.gov
+  - bls.gov
+  - whitehouse.gov
+  - congress.gov
+  - gov.uk
+  - ons.gov.uk
+  - nasa.gov
+  - noaa.gov
+
+reference:
+  - britannica.com
+  - wikipedia.org

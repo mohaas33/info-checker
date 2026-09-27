@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Info Checker settings</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 560px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 4px; }
+    input[type="url"] { width: 100%; font: inherit; padding: 6px 8px; }
+    h2 { font-size: 16px; margin-top: 28px; }
+    label.check { font-weight: normal; display: flex; gap: 8px; align-items: center; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button { font: inherit; padding: 4px 12px; }
+    .muted { opacity: 0.7; font-size: 13px; }
+    #status { margin-top: 12px; min-height: 1.5em; }
+    .ok { color: #1a7f37; }
+    .err { color: #cf222e; }
+  </style>
+</head>
+<body>
+  <h1>Info Checker settings</h1>
+
+  <label for="backend-url">Backend URL</label>
+  <input id="backend-url" type="url" placeholder="http://localhost:8000" spellcheck="false">
+  <p class="muted">
+    Where the Python backend runs. For an address other than http://localhost:8000,
+    Chrome will ask you to allow the extension to contact it.
+  </p>
+  <div class="row">
+    <button id="save" type="button">Save</button>
+    <button id="test" type="button">Test connection</button>
+    <button id="reset" type="button">Reset to default</button>
+  </div>
+  <p id="status"></p>
+
+  <h2>Highlighting</h2>
+  <label class="check">
+    <input id="show-supported" type="checkbox">
+    Highlight <em>supported</em> claims on the page
+  </label>
+  <p class="muted">
+    Off by default to reduce noise: only contradicted, misleading, outdated and
+    unverifiable claims are highlighted. Opinions and predictions are never highlighted.
+  </p>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

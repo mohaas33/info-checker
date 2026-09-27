@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Info Checker test page</title>
+  <style>
+    body { font: 17px/1.6 Georgia, serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #222; background: #fff; }
+    h1, h2 { font-family: system-ui, sans-serif; }
+    .note { font: 13px/1.4 system-ui, sans-serif; background: #fff8c5; border: 1px solid #d4a72c; padding: 8px 12px; border-radius: 6px; }
+    .case { border-left: 4px solid #ccc; padding: 4px 14px; margin: 24px 0; }
+    .case h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #777; margin: 0 0 4px; }
+    .sidebar { float: right; width: 200px; margin: 0 0 16px 16px; padding: 8px 12px; background: #f3f3f3; font-size: 14px; }
+    .post { font-family: system-ui, sans-serif; font-size: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px; background: #fafafa; }
+    .post .author { font-weight: 600; }
+    .hidden-text { display: none; }
+    /* Page CSS that a sloppy tooltip would inherit. The extension's tooltip must not. */
+    div { letter-spacing: 0.02em; }
+    button { font-size: 20px; color: hotpink; }
+  </style>
+</head>
+<body>
+  <h1>Info Checker test page</h1>
+  <p class="note">
+    For manual testing. Select a passage (or the whole article), right-click, and choose
+    <b>Fact-check this</b>. Each case below exercises a different matching problem.
+    If you open this file directly (file://), enable <i>Allow access to file URLs</i> for
+    the extension on chrome://extensions, or serve it: <code>python3 -m http.server</code>.
+  </p>
+
+  <aside class="sidebar">
+    <b>Sidebar</b> (outside the article)<br>
+    The Great Wall of China is the only man-made structure visible from the Moon with the naked eye.
+    <br><small>This repeats a sentence from case 3. If you select only case 3, this copy must not be highlighted.</small>
+  </aside>
+
+  <article id="article">
+    <section class="case">
+      <h2>1. Claim crossing bold and link tags</h2>
+      <p>
+        The <b>Eiffel Tower</b> in Paris is <a href="#">330 metres</a> tall and was
+        <b><i>completed in 1889</i></b> for the World's Fair.
+      </p>
+    </section>
+
+    <section class="case">
+      <h2>2. Nested spans</h2>
+      <p>
+        <span>In <span>May <span>2023</span></span>, the <span><span>World Health</span> Organization</span></span>
+        declared that <span>COVID-19 no longer represents a global health emergency.</span>
+      </p>
+    </section>
+
+    <section class="case">
+      <h2>3. Repeated sentence (also in the sidebar)</h2>
+      <p>
+        The Great Wall of China is the only man-made structure visible from the Moon with the naked eye.
+        Tour guides still repeat it every day.
+      </p>
+    </section>
+
+    <section class="case">
+      <h2>4. Curly quotes, apostrophes and dashes</h2>
+      <p>
+        “The only thing we have to fear is fear itself,” Franklin D. Roosevelt said in his
+        1933 inaugural address. It’s one of the most quoted lines in U.S. history — and
+        Albert Einstein once said, ‘Insanity is doing the same thing over and over and
+        expecting different results.’
+      </p>
+    </section>
+
+    <section class="case">
+      <h2>5. Time-sensitive claim across a line break</h2>
+      <p>Keir Starmer is currently the Prime Minister<br>of the United Kingdom.</p>
+    </section>
+
+    <section class="case">
+      <h2>6. Social post with hidden "See more" text and a re-render</h2>
+      <div class="post" id="post">
+        <div class="author">Jane Example · 2h</div>
+        <div class="body">
+          Just read that <b>drinking eight glasses of water a day</b> is required for good health,
+          according to doctors<span class="hidden-text"> (hidden text that isn't rendered)</span>.
+          Honestly the best advice I've ever had!
+        </div>
+      </div>
+      <p style="font: 13px system-ui, sans-serif">
+        <button id="rerender" type="button" style="font-size:13px;color:inherit">Simulate feed re-render</button>
+        replaces this post's DOM with an identical copy, like Facebook does. Its highlight
+        should disappear and its card should say "No longer visible on the page".
+      </p>
+    </section>
+
+    <section class="case">
+      <h2>7. Long article</h2>
+      <p>
+        The International Space Station has been continuously occupied since November 2000.
+        It orbits Earth roughly every 90 minutes at an altitude of about 400 kilometres.
+      </p>
+      <p>
+        Mount Everest, at 8,849 metres above sea level according to a 2020 survey by China
+        and Nepal, is the highest mountain on Earth. Its summit straddles the border between
+        the two countries.
+      </p>
+      <p>
+        The Amazon rainforest produces 20 percent of the world's oxygen, a figure that has
+        been widely repeated by politicians and celebrities. Scientists say most of that
+        oxygen is consumed within the forest itself.
+      </p>
+      <p>
+        Pineapple is the best pizza topping, and anyone who disagrees has terrible taste.
+        By 2030, most pizzerias will offer it by default.
+      </p>
+      <p>
+        Lightning never strikes the same place twice. The Empire State Building, however,
+        is hit around 20 to 25 times a year, according to the National Weather Service.
+      </p>
+      <p>
+        The human brain uses only 10 percent of its capacity, a myth popularized by
+        self-help books in the twentieth century.
+      </p>
+      <p>
+        Bats are blind and navigate entirely by echolocation. Goldfish have a memory span of
+        only three seconds. Both claims appear regularly in popular quiz books.
+      </p>
+      <p>
+        The United Kingdom voted to leave the European Union in a referendum held in June
+        2016, with 52 percent voting to leave. Britain formally left on 31 January 2020.
+      </p>
+    </section>
+  </article>
+
+  <script>
+    // Test helper only: rebuild the post from its HTML, detaching the old text nodes.
+    document.getElementById("rerender").addEventListener("click", () => {
+      const post = document.getElementById("post");
+      const copy = document.createElement("div");
+      copy.innerHTML = post.outerHTML;
+      post.replaceWith(copy.firstElementChild);
+    });
+  </script>
+</body>
+</html>

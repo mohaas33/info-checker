@@ -1,0 +1,5 @@
+text,expected_verdict,source
+"The Great Wall of China is the only man-made structure visible from the Moon with the naked eye.",contradicted,snopes.com/fact-check/great-wall-from-moon
+"In May 2023, the World Health Organization declared that COVID-19 no longer represents a global health emergency.",supported,who.int
+"Keir Starmer is currently the Prime Minister of the United Kingdom.",outdated,news (Jul 2026)
+"Pineapple is the best pizza topping.",not_checkable,opinion

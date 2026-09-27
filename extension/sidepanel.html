@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Info Checker</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1>Info Checker</h1>
+    <a id="options-link" href="#" title="Settings">Settings</a>
+  </header>
+
+  <p class="disclaimer">
+    Automated check based on retrieved sources. It can be wrong. Review the evidence yourself.
+  </p>
+
+  <main id="view">
+    <!-- idle -->
+    <section id="idle" class="state">
+      <p>Select text on any page, right-click it, and choose <strong>Fact-check this</strong>.</p>
+      <p class="muted">Only the text you select is sent for checking.</p>
+    </section>
+
+    <!-- loading -->
+    <section id="loading" class="state" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p><strong>Checking claims…</strong> <span id="elapsed">0s</span></p>
+      <p class="muted">This usually takes 5–30 seconds.</p>
+      <blockquote id="loading-text"></blockquote>
+      <button id="cancel" type="button">Cancel</button>
+    </section>
+
+    <!-- error -->
+    <section id="error" class="state" hidden>
+      <p class="error-title" id="error-title"></p>
+      <p id="error-detail"></p>
+      <button id="retry" type="button">Try again</button>
+    </section>
+
+    <!-- results -->
+    <section id="results" class="state" hidden>
+      <p id="summary"></p>
+      <p class="muted" id="checked-at"></p>
+
+      <div id="highlight-bar" hidden>
+        <ul class="legend" aria-label="Highlight legend">
+          <li><span class="swatch" data-verdict="contradicted">text</span> Contradicted</li>
+          <li><span class="swatch" data-verdict="misleading">text</span> Misleading</li>
+          <li><span class="swatch" data-verdict="outdated">text</span> Outdated</li>
+          <li><span class="swatch" data-verdict="unverifiable">text</span> Unverifiable</li>
+          <li id="legend-supported" hidden><span class="swatch" data-verdict="supported">text</span> Supported</li>
+        </ul>
+        <button id="clear-highlights" type="button">Clear highlights</button>
+      </div>
+      <p class="muted" id="highlight-note" hidden></p>
+
+      <ol id="claims"></ol>
+    </section>
+  </main>
+
+  <template id="claim-card">
+    <li class="card">
+      <div class="card-head">
+        <span class="badge"></span>
+        <span class="type"></span>
+        <span class="confidence"></span>
+      </div>
+      <p class="claim"></p>
+      <p class="locate-note" hidden></p>
+      <p class="original" hidden></p>
+      <p class="explanation"></p>
+      <div class="fact-checks" hidden>
+        <p class="label">Existing fact-checks</p>
+        <ul></ul>
+      </div>
+      <div class="sources" hidden>
+        <p class="label">Sources</p>
+        <ol></ol>
+      </div>
+    </li>
+  </template>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
