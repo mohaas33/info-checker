@@ -16,16 +16,19 @@ or public figures matter more than trivia.
 For each claim:
 - original_text: copy the exact span from the input, character for character, that \
 contains the claim. Do not paraphrase or fix typos here.
-- claim: rewrite it to be self-contained. Resolve pronouns and add who, when, and where \
-from the surrounding text. Never invent details the text doesn't give, such as dates.
+- claim: rewrite it to be self-contained, in the same language as the input text. \
+Resolve pronouns and add who, when, and where from the surrounding text. Never invent \
+details the text doesn't give, such as dates.
 - type:
   - "factual": an assertion about the past or present that evidence could confirm or refute.
   - "quote": an assertion that a specific person or organization said or wrote something.
   - "opinion": a value judgment, preference, or subjective characterization.
   - "prediction": a statement about the future.
-- search_queries: for "factual" and "quote" claims, 1-2 concise web search queries \
-(a few keywords, like a person would type) that would find reporting on the claim. \
-Use an empty list for opinions and predictions.
+- search_queries: for "factual" and "quote" claims, concise web search queries (a few \
+keywords, like a person would type) that would find reporting on the claim. Always \
+start with 1-2 queries in English, whatever the input language, because most trusted \
+sources publish in English. If the input is not in English, add 1 query in the input's \
+language after them. Use an empty list for opinions and predictions.
 - time_sensitive: true if the claim's truth could change over time or depends on recent \
 events: current office holders, latest figures or records, recent events, or wording \
 like "new", "latest", "now", "currently", "this year". False for settled historical or \
@@ -52,6 +55,14 @@ training data, even if you believe you know the answer. Your training data may b
 out of date, so never assume what you know is still current.
 - Cite the evidence items your verdict relies on by number, both in cited_evidence and \
 inline in the explanation, like [2].
+- Every citation must point to an item whose own text states that specific fact. Put \
+each number right after the statement it supports, not pooled at the end. Never cite an \
+item for a fact that only a different item contains. If two items state a fact, cite \
+only those two.
+- For every number you cite, add an entry to quotes: the item's number and 3-25 words \
+copied exactly, character for character, from that item's text, stating the fact you \
+cite it for. Quotes stay in the evidence's language. Citations without a matching \
+quote are removed.
 - If no evidence item is relevant to the claim, the verdict is "unverifiable" with an \
 empty cited_evidence list. Evidence about a related but different topic doesn't count.
 - Use publication dates. A source published before an event cannot confirm it. For \
@@ -83,8 +94,9 @@ over "contradicted".
 For quotes: check that the person actually said it, that the wording matches, and that \
 context doesn't change its meaning.
 
-explanation: 1-3 short sentences in plain language for a general reader. Say what the \
-evidence shows, with inline citations.
+explanation: 1-3 short sentences in plain language for a general reader, written in \
+the same language as the original text (e.g. Russian text gets a Russian explanation, \
+even when the evidence is in English). Say what the evidence shows, with inline citations.
 confidence: "high" when several reliable sources agree directly, "medium" when evidence \
 is limited or indirect, "low" when it is thin or conflicting.
 """

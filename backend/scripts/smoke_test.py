@@ -1,4 +1,4 @@
-"""Send 4 sample texts to a running backend and print the full JSON results.
+"""Send 8 sample texts to a running backend and print the full JSON results.
 
 Usage (from backend/):  python scripts/smoke_test.py [--url http://localhost:8000]
 
@@ -21,6 +21,12 @@ SAMPLES = [
     ("opinion", "Pineapple is the best pizza topping, and anyone who disagrees has terrible taste."),
     # Time-sensitive: the answer depends on recent, dated news, not on the model's memory.
     ("time-sensitive", "Keir Starmer is currently the Prime Minister of the United Kingdom."),
+    # Non-English: explanations should come back in the input's language.
+    ("russian false", "Эйфелева башня была построена в 1920 году."),
+    ("russian true", "В мае 2023 года Всемирная организация здравоохранения объявила, что COVID-19 "
+                     "больше не является глобальной чрезвычайной ситуацией в области здравоохранения."),
+    ("hebrew false", "תומאס אדיסון המציא את הטלפון."),
+    ("hebrew true", "יורי גגארין היה האדם הראשון שטס לחלל, בשנת 1961."),
 ]
 
 

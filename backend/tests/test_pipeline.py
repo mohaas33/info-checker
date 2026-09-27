@@ -6,7 +6,7 @@ import pytest
 
 from app import factcheck_api, llm, pipeline, search
 from app.factcheck_api import FactCheckReview
-from app.schemas import ExtractedClaim, ExtractionOutput, VerificationOutput
+from app.schemas import EvidenceQuote, ExtractedClaim, ExtractionOutput, VerificationOutput
 from app.search import SearchResult
 
 TEXT = (
@@ -52,8 +52,12 @@ class Fakes:
             return ExtractionOutput(claims=self.claims)
         claim = user.split("\n")[1]
         await asyncio.sleep(self.delays.get(claim, 0))
+        # Like a real model: cite item [1] and quote its title (part of the item's text).
+        first = re.search(r"^\[1\] (.+)$", user, re.M)
+        quotes = [EvidenceQuote(n=1, quote=first.group(1))] if first else []
         v = self.verdicts.get(claim) or VerificationOutput(
-            verdict="supported", explanation="Confirmed [1].", confidence="high", cited_evidence=[1])
+            verdict="supported", explanation="Confirmed [1].", confidence="high",
+            cited_evidence=[1], quotes=quotes)
         if isinstance(v, Exception):
             raise v
         return v
@@ -213,12 +217,18 @@ async def test_verification_prompt_has_today_and_published_dates(fakes):
 
 
 def ev(n):
-    return pipeline.EvidenceItem(n, f"T{n}", "pub", f"https://x.org/{n}", "s", None)
+    return pipeline.EvidenceItem(n, f"T{n}", "pub", f"https://x.org/{n}",
+                                 f"Item {n} reports the key fact clearly.", None)
+
+
+def quotes(*ns):
+    return [EvidenceQuote(n=n, quote=f"Item {n} reports the key fact") for n in ns]
 
 
 def test_invalid_citations_dropped_and_renumbered():
     out = VerificationOutput(verdict="contradicted", confidence="high", cited_evidence=[3, 9],
-                             explanation="Sources say no [3]. Also [9] and [1, 3].")
+                             explanation="Sources say no [3]. Also [9] and [1, 3].",
+                             quotes=quotes(3, 1))
     fixed, cited = pipeline.apply_citations(out, [ev(1), ev(2), ev(3)])
     assert [e.n for e in cited] == [3, 1]  # cited_evidence order first, then inline
     assert fixed.cited_evidence == [3, 1]
@@ -363,13 +373,14 @@ async def test_news_query_only_for_time_sensitive(fakes):
 
 def ref_ev(n, reference):
     return pipeline.EvidenceItem(n, f"T{n}", "wikipedia.org" if reference else "reuters.com",
-                                 f"https://x.org/{n}", "s", None, reference=reference)
+                                 f"https://x.org/{n}", f"Item {n} reports the key fact clearly.",
+                                 None, reference=reference)
 
 
 @pytest.mark.parametrize("verdict", ["contradicted", "misleading"])
 def test_negative_verdict_on_reference_only_gets_low_confidence(verdict):
     out = VerificationOutput(verdict=verdict, confidence="high", cited_evidence=[1],
-                             explanation="Wiki says no [1].")
+                             explanation="Wiki says no [1].", quotes=quotes(1))
     fixed, _ = pipeline.apply_citations(out, [ref_ev(1, True), ref_ev(2, False)])
     assert fixed.verdict == verdict and fixed.confidence == "low"
     assert "reference sites" in fixed.explanation
@@ -377,14 +388,14 @@ def test_negative_verdict_on_reference_only_gets_low_confidence(verdict):
 
 def test_reference_plus_primary_keeps_confidence():
     out = VerificationOutput(verdict="contradicted", confidence="high", cited_evidence=[1, 2],
-                             explanation="No [1][2].")
+                             explanation="No [1][2].", quotes=quotes(1, 2))
     fixed, _ = pipeline.apply_citations(out, [ref_ev(1, True), ref_ev(2, False)])
     assert fixed.confidence == "high"
 
 
 def test_supported_on_reference_only_keeps_confidence():
     out = VerificationOutput(verdict="supported", confidence="high", cited_evidence=[1],
-                             explanation="Yes [1].")
+                             explanation="Yes [1].", quotes=quotes(1))
     fixed, _ = pipeline.apply_citations(out, [ref_ev(1, True)])
     assert fixed.confidence == "high"
 
@@ -420,3 +431,86 @@ def test_locate_span_dashes():
     text = "COVID\u201119 was declared a pandemic \u2014 in March 2020."
     start, span = pipeline.locate_span(text, "COVID-19 was declared a pandemic - in March 2020", "")
     assert start == 0 and span == "COVID\u201119 was declared a pandemic \u2014 in March 2020"
+
+
+# ---------- quote-verified citations (attribution check) ----------
+
+
+def test_misattributed_citation_moves_to_item_with_the_quote():
+    # The model cites [2] for a fact that only item [3] contains (the Edison case).
+    out = VerificationOutput(
+        verdict="contradicted", confidence="high", cited_evidence=[1, 2],
+        explanation="Bell invented it [1]. Edison made the phonograph [2].",
+        quotes=[EvidenceQuote(n=1, quote="Item 1 reports the key fact"),
+                EvidenceQuote(n=2, quote="Item 3 reports the key fact clearly")])
+    fixed, cited = pipeline.apply_citations(out, [ev(1), ev(2), ev(3)])
+    assert [e.n for e in cited] == [1, 3]
+    assert fixed.explanation == "Bell invented it [1]. Edison made the phonograph [2]."
+    assert fixed.verdict == "contradicted"
+
+
+def test_citation_without_quote_is_dropped():
+    out = VerificationOutput(verdict="supported", confidence="high", cited_evidence=[1, 2],
+                             explanation="Yes [1][2].", quotes=quotes(1))
+    fixed, cited = pipeline.apply_citations(out, [ev(1), ev(2)])
+    assert [e.n for e in cited] == [1]
+    assert fixed.explanation == "Yes [1]."
+
+
+def test_quote_found_nowhere_downgrades():
+    out = VerificationOutput(verdict="contradicted", confidence="high", cited_evidence=[1],
+                             explanation="Wrong [1].",
+                             quotes=[EvidenceQuote(n=1, quote="something the item never said")])
+    fixed, cited = pipeline.apply_citations(out, [ev(1)])
+    assert cited == [] and fixed.verdict == "unverifiable" and fixed.confidence == "low"
+
+
+def test_pooled_citation_keeps_only_supported_items():
+    # "Both A and B confirm X [1][3]" where only [1] contains X (the Great Wall case).
+    out = VerificationOutput(verdict="contradicted", confidence="high", cited_evidence=[1, 3],
+                             explanation="Both confirm it [1][3].",
+                             quotes=[EvidenceQuote(n=1, quote="Item 1 reports the key fact"),
+                                     EvidenceQuote(n=3, quote="a human hair viewed from 3 km")])
+    fixed, cited = pipeline.apply_citations(out, [ev(1), ev(2), ev(3)])
+    assert [e.n for e in cited] == [1] and fixed.explanation == "Both confirm it [1]."
+
+
+def test_duplicate_citations_after_move_collapse():
+    out = VerificationOutput(verdict="supported", confidence="high", cited_evidence=[1, 2],
+                             explanation="Yes [1][2]. Also [1, 2].",
+                             quotes=[EvidenceQuote(n=1, quote="Item 1 reports the key fact"),
+                                     EvidenceQuote(n=2, quote="Item 1 reports the key fact clearly")])
+    fixed, cited = pipeline.apply_citations(out, [ev(1), ev(2)])
+    assert [e.n for e in cited] == [1]
+    assert fixed.explanation == "Yes [1]. Also [1]."
+
+
+@pytest.mark.parametrize("quote, ok", [
+    ("Item 1 reports the key fact", True),                    # exact
+    ("item 1  REPORTS the key fact", True),                   # case and whitespace
+    ("\u201cItem 1 reports the key fact\u201d", True),        # curly quotes around it
+    ("Item 1 reports the key fact very clearly", False),      # 1 of 7 words missing: under 90%
+    ("reports", False),                                       # too short to count
+])
+def test_quote_matching(quote, ok):
+    assert pipeline.quote_in(quote, "T1 Item 1 reports the key fact clearly.") is ok
+
+
+def test_quote_matching_tolerates_small_slips():
+    text = "The World Health Organization ended the global emergency status for COVID-19 on Friday"
+    assert pipeline.quote_in("World Health Organisation ended the global emergency status for COVID-19 on Friday", text)
+
+
+def test_non_english_explanation_with_english_quotes():
+    out = VerificationOutput(verdict="contradicted", confidence="high", cited_evidence=[1],
+                             explanation="Башня построена в 1889 году [1].", quotes=quotes(1))
+    fixed, cited = pipeline.apply_citations(out, [ev(1)])
+    assert [e.n for e in cited] == [1] and fixed.explanation == "Башня построена в 1889 году [1]."
+
+
+async def test_english_plus_native_queries_all_searched(fakes):
+    fakes.claims = [ExtractedClaim(
+        original_text="Paris has 20 million residents.", claim="В Париже 20 миллионов жителей.",
+        type="factual", search_queries=["Paris population", "Paris residents 2026", "население Парижа"])]
+    await pipeline.check_text(TEXT)
+    assert [q for q, _ in fakes.searches] == ["Paris population", "Paris residents 2026", "население Парижа"]

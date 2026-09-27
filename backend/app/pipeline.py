@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -28,7 +29,7 @@ SNIPPET_CHARS = 600
 EVIDENCE_BUDGET_CHARS = 8000
 RESULTS_PER_QUERY = 10  # Tavily "basic" costs the same for 5 or 10 results
 MAX_PER_SITE = 2  # keep evidence diverse: at most this many articles per site
-MAX_QUERIES_PER_CLAIM = 2
+MAX_QUERIES_PER_CLAIM = 3  # up to 2 English + 1 in the text's own language
 
 NOT_CHECKABLE_NOTE = {
     "opinion": "This is an opinion, so it can't be confirmed or refuted with evidence.",
@@ -166,28 +167,81 @@ async def gather_evidence(claim: ExtractedClaim, domains: list[str],
 # ---------- citation validation ----------
 
 _CITE_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+MIN_QUOTE_WORD_SHARE = 0.9  # fallback when a quote isn't an exact substring
+
+
+def _norm_quote_text(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s).translate(_QUOTES).casefold()
+    return " ".join(s.replace("[...]", " ").split())
+
+
+def quote_in(quote: str, text: str) -> bool:
+    """True if `quote` was copied from `text`: an exact match after normalizing case,
+    whitespace and quote marks, or (for small copying slips) at least 90% of its words
+    present in the text. Language-agnostic, so non-English explanations still work."""
+    q = _norm_quote_text(quote).strip(" \"'.…")
+    if len(q) < 8:
+        return False
+    t = _norm_quote_text(text)
+    if q in t:
+        return True
+    words = re.findall(r"\w+", q)
+    if len(words) < 4:
+        return False
+    vocab = set(re.findall(r"\w+", t))
+    return sum(w in vocab for w in words) / len(words) >= MIN_QUOTE_WORD_SHARE
+
+
+def resolve_citations(out: VerificationOutput, evidence: list[EvidenceItem],
+                      numbers: list[int]) -> dict[int, int | None]:
+    """For each cited number, the evidence item that actually contains its quoted fact:
+    the same number, a different one (misattributed citation), or None (unsupported)."""
+    texts = {e.n: f"{e.title} {e.snippet}" for e in evidence}
+    quotes: dict[int, list[str]] = {}
+    for q in out.quotes:
+        quotes.setdefault(q.n, []).append(q.quote)
+    resolved: dict[int, int | None] = {}
+    for n in numbers:
+        own = quotes.get(n, [])
+        if n in texts and any(quote_in(q, texts[n]) for q in own):
+            resolved[n] = n
+            continue
+        homes = sorted({m for q in own for m, t in texts.items() if quote_in(q, t)})
+        resolved[n] = homes[0] if homes else None
+    return resolved
 
 
 def apply_citations(
     out: VerificationOutput, evidence: list[EvidenceItem]
 ) -> tuple[VerificationOutput, list[EvidenceItem]]:
-    """Keep only citations that exist in the evidence list, and renumber them to match the
-    sources shown to the user. Downgrade to unverifiable if no valid citation remains."""
+    """Check every citation against the evidence, then renumber to match the sources shown
+    to the user.
+
+    Each cited number needs a quote copied from that item. A citation whose quote is found
+    only in a different item is moved there; one with no matching quote (or pointing to a
+    nonexistent item) is dropped. Downgrade to unverifiable if no valid citation remains."""
     by_n = {e.n: e for e in evidence}
     inline = [int(n) for m in _CITE_RE.finditer(out.explanation) for n in m.group(1).split(",")]
-    cited = [n for n in dict.fromkeys([*out.cited_evidence, *inline]) if n in by_n]
-    dropped = set(out.cited_evidence) | set(inline)
-    dropped -= set(cited)
-    if dropped:
-        log.warning("dropped citations to nonexistent evidence: %s", sorted(dropped))
+    numbers = list(dict.fromkeys([*out.cited_evidence, *inline]))
+    target = resolve_citations(out, evidence, numbers)
 
+    moved = {n: t for n, t in target.items() if t is not None and t != n}
+    dropped = sorted(n for n, t in target.items() if t is None)
+    if moved:
+        log.warning("moved misattributed citations (cited -> item with the quote): %s", moved)
+    if dropped:
+        log.warning("dropped citations without a supporting quote (or nonexistent): %s", dropped)
+
+    cited = list(dict.fromkeys(target[n] for n in numbers if target[n] is not None))
     renumber = {n: i + 1 for i, n in enumerate(cited)}
 
     def fix(m: re.Match) -> str:
-        nums = [renumber[int(n)] for n in m.group(1).split(",") if int(n) in renumber]
+        nums = dict.fromkeys(renumber[target[int(n)]] for n in m.group(1).split(",")
+                             if target.get(int(n)) is not None)
         return f"[{', '.join(map(str, nums))}]" if nums else ""
 
     explanation = _CITE_RE.sub(fix, out.explanation)
+    explanation = re.sub(r"(\[[\d, ]+\])(?:\s*\1)+", r"\1", explanation)  # "[1][1]" -> "[1]"
     explanation = re.sub(r"\s+([.,;:])", r"\1", re.sub(r" {2,}", " ", explanation)).strip()
     verdict, confidence = out.verdict, out.confidence
     if verdict != "unverifiable" and not cited:

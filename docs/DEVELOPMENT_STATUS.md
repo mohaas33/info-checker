@@ -25,7 +25,7 @@ usage, see the [README](../README.md).
 | `main.py` | FastAPI app: `POST /check`, `GET /health`, CORS limited to `ALLOWED_ORIGINS`. Checks keys and models at startup |
 | `pipeline.py` | The checking pipeline: claim extraction, evidence gathering, verification, citation validation, time limits |
 | `prompts.py` | Extraction and verification prompts |
-| `llm.py` | Every LLM call goes through `complete_json()`. It requests JSON mode, strips `<think>` blocks and code fences, validates with Pydantic, and retries once. Swapping providers means changing only this module |
+| `llm.py` | Every LLM call goes through `complete_json()` (NVIDIA Nemotron on Nebius by default). It requests JSON mode, strips `<think>` blocks and code fences, validates with Pydantic, and retries once. Swapping providers means changing only this module |
 | `search.py` | Tavily search, `sources.yaml` loading, host → site mapping, date parsing |
 | `factcheck_api.py` | Google Fact Check `claims:search` client |
 | `cache.py` | SQLite cache. The key covers the text, both model names, `MAX_CLAIMS`, the trusted-domain list and `PIPELINE_VERSION` |
@@ -33,8 +33,13 @@ usage, see the [README](../README.md).
 | `schemas.py`, `usage.py` | API and LLM schemas; per-request cost counters |
 
 **Rules enforced in code**, not just in prompts:
-- Citations to evidence items that don't exist are dropped. The remaining numbers are
-  renumbered to match the `sources` list shown to the user.
+- Every citation must come with a short quote copied from the cited item. Quotes are
+  matched after normalizing case, whitespace and quote marks, with a 90% word-overlap
+  fallback, so it works when the explanation is in another language:
+  - A citation whose quote appears only in a different item is moved to that item.
+  - A citation with no matching quote, or pointing to an item that doesn't exist, is
+    dropped.
+  - The remaining numbers are renumbered to match the `sources` list shown to the user.
 - A verdict other than *unverifiable* that has no valid citation left is downgraded to
   *unverifiable* with low confidence.
 - A *contradicted* or *misleading* verdict that cites only reference sites
@@ -45,7 +50,8 @@ usage, see the [README](../README.md).
   rest of the response is still returned. Responses with a failed claim aren't cached.
 
 **Evidence gathering per claim:**
-- 1–2 general Tavily queries, 10 results each.
+- 1–2 general Tavily queries in English, 10 results each, plus 1 in the text's own
+  language when it isn't English.
 - One news-mode query if the extraction step flags the claim as time-sensitive. News
   results carry publication dates and are ranked first.
 - The optional Google Fact Check lookup.
@@ -67,15 +73,18 @@ usage, see the [README](../README.md).
 ## Verification
 
 **Automated:**
-- 97 backend tests: all external APIs are mocked, and settings are isolated from the
+- 114 backend tests: all external APIs are mocked, and settings are isolated from the
   local `.env`.
 - 12 matcher tests.
 - Both suites run in CI with no secrets.
 
 **Tested against the real APIs:**
-- Model selection.
-- Smoke tests: a false claim, a true claim, an opinion, and a time-sensitive claim about
-  a change of UK Prime Minister. That last one is answered from dated news evidence, not
+- Model selection:
+  - Nemotron-3 Super, Nano and Ultra on the extraction test.
+  - Nemotron-3 Ultra compared with GLM-5.3 on verification, with every citation checked
+    by hand against the evidence text.
+- Smoke tests: a false claim, a true claim, an opinion, a time-sensitive claim about a
+  change of UK Prime Minister, and a false and a true claim each in Russian and Hebrew. That last one is answered from dated news evidence, not
   from the model's training data.
 - `eval.py` on the example rows.
 
@@ -124,6 +133,14 @@ usage, see the [README](../README.md).
 
 ## Known issues
 
+- **Explanation language isn't always followed.** Explanations should be in the input's
+  language; one of four non-English smoke-test claims (Hebrew) got an English explanation.
+- **Strict quote check can uncite true statements.** When the model gives no quote for a
+  citation, the citation is dropped even if the fact is in that item.
+- **Slower and more tokens with the Nemotron defaults** (12–18 s per factual claim). The
+  models reason internally; the non-reasoning alternatives were about twice as fast in
+  the same tests.
+
 - **Verdict variance between runs.** A claim about a former office holder has come back
   both *outdated* and *contradicted* with the same prompt and model. The size of this
   hasn't been measured.
@@ -137,8 +154,8 @@ usage, see the [README](../README.md).
   That text has no line breaks, and nothing is highlighted.
 - **One element added to the page.** The tooltip host is attached to `<html>`. It's
   re-added if the page removes it.
-- **The default models were chosen from a handful of samples**, not a systematic
-  evaluation.
+- **The default models were chosen from a handful of samples** (6 extraction runs per
+  model, 8 smoke-test claims), not a systematic evaluation.
 
 ## Next steps
 

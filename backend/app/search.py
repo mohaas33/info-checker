@@ -117,7 +117,9 @@ def iso_date(value: str | None) -> str | None:
 
 
 def domain_of(url: str) -> str:
-    host = urlparse(url).hostname or ""
+    # A fully qualified host can end in "." ("britannica.com."); drop it so site and
+    # reference-group matching still work.
+    host = (urlparse(url).hostname or "").rstrip(".")
     return host.removeprefix("www.")
 
 

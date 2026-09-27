@@ -200,3 +200,15 @@ async def test_search_falls_back_to_url_date(monkeypatch):
         {"title": "t", "url": "https://npr.org/2026/06/22/x", "content": "c"}]}))
     [r] = await search.search("q", domains=["npr.org"])
     assert r.published_date == "2026-06-22"
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://www.britannica.com./topic/x", "britannica.com"),
+    ("https://britannica.com./topic/x", "britannica.com"),
+    ("https://www.reuters.com/a", "reuters.com"),
+    ("https://en.wikipedia.org/wiki/X", "en.wikipedia.org"),
+])
+def test_domain_of_strips_www_and_trailing_dot(url, expected):
+    assert search.domain_of(url) == expected
+    assert search.site_of(search.domain_of(url), ["britannica.com", "wikipedia.org", "reuters.com"]) in (
+        "britannica.com", "wikipedia.org", "reuters.com")

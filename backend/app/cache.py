@@ -15,7 +15,7 @@ import aiosqlite
 
 from app.schemas import CheckResponse
 
-PIPELINE_VERSION = "6"
+PIPELINE_VERSION = "7"
 
 
 def normalize_text(text: str) -> str:

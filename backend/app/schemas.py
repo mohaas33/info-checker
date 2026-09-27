@@ -68,10 +68,13 @@ class CheckResponse(BaseModel):
 
 class ExtractedClaim(BaseModel):
     original_text: str = Field(description="Exact span copied verbatim from the input text")
-    claim: str = Field(description="Self-contained rewrite: pronouns resolved, who/when/where added")
+    claim: str = Field(
+        description="Self-contained rewrite in the text's own language: pronouns resolved, who/when/where added")
     type: ClaimType
     search_queries: list[str] = Field(
-        default=[], description="1-2 concise web search queries (only for factual/quote claims)"
+        default=[],
+        description="Concise web search queries (only for factual/quote claims): 1-2 in English first, "
+        "then 1 in the text's own language if it isn't English",
     )
     time_sensitive: bool = Field(
         default=False,
@@ -84,10 +87,19 @@ class ExtractionOutput(BaseModel):
     claims: list[ExtractedClaim]
 
 
+class EvidenceQuote(BaseModel):
+    n: int = Field(description="Number of the evidence item the quote is copied from")
+    quote: str = Field(description="3-25 words copied exactly from that item, stating the fact it is cited for")
+
+
 class VerificationOutput(BaseModel):
     verdict: Literal["supported", "contradicted", "misleading", "unverifiable", "outdated"]
-    explanation: str = Field(description="1-3 plain-language sentences, citing evidence like [1]")
+    explanation: str = Field(
+        description="1-3 plain-language sentences in the language of the original text, citing evidence like [1]")
     confidence: Confidence
     cited_evidence: list[int] = Field(
         default=[], description="Numbers of the evidence items the verdict relies on"
+    )
+    quotes: list[EvidenceQuote] = Field(
+        default=[], description="For every cited number, an exact quote from that item that supports it"
     )

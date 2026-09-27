@@ -19,8 +19,13 @@ it was checked against. The claims are also highlighted on the page.
 - Search a list of trusted sites (wire services, fact-checkers, major outlets, official
   sources) that you control in [`backend/sources.yaml`](backend/sources.yaml).
 - Ask a language model to judge each claim **only against the retrieved evidence**, with
-  numbered citations. Code-level checks drop citations that don't exist and downgrade
-  unsupported verdicts to *unverifiable*.
+  numbered citations. For every citation the model must also copy an exact quote from
+  the cited item. Code checks each quote against that item's text:
+  - A citation whose quote is found only in a different item is moved to that item.
+  - A citation with no matching quote is dropped.
+  - A verdict left with no valid citation is downgraded to *unverifiable*.
+- Work in other languages. Claims are searched in English and in the text's own
+  language, and explanations are written in the language of the selected text.
 - Highlight each claim on the page by verdict, without changing the page's HTML.
 
 **It doesn't:**
@@ -35,20 +40,22 @@ it was checked against. The claims are also highlighted on the page.
 ```mermaid
 flowchart LR
     A["Chrome extension<br/>(side panel + page highlights)"] -- "POST /check<br/>selected text" --> B["Backend<br/>FastAPI on localhost:8000"]
-    B -- "claim extraction<br/>+ verification" --> C["Nebius Token Factory<br/>(LLM)"]
+    B -- "claim extraction<br/>+ verification" --> C["NVIDIA Nemotron models<br/>on Nebius Token Factory"]
     B -- "web search on<br/>trusted domains" --> D["Tavily"]
     B -- "existing fact-checks<br/>(optional)" --> E["Google Fact Check<br/>Tools API"]
     B <--> F[("SQLite cache<br/>24 h")]
 ```
 
 1. The extension captures your selection and sends its text to the backend.
-2. The backend asks an LLM to split it into self-contained claims, each typed as
-   factual, quote, opinion or prediction.
+2. The backend asks an LLM (NVIDIA Nemotron-3 Super by default) to split it into
+   self-contained claims, each typed as factual, quote, opinion or prediction.
 3. For each factual claim or quote, it searches Tavily (limited to `sources.yaml`) and,
    if configured, the Google Fact Check API. Claims about current events also get a
    news search, which returns dated articles.
-4. A second LLM call judges each claim against the numbered evidence. It returns one of
-   *supported*, *contradicted*, *misleading*, *outdated* or *unverifiable*.
+4. A second LLM call (NVIDIA Nemotron-3 Ultra by default) judges each claim against the
+   numbered evidence. It returns one of *supported*, *contradicted*, *misleading*,
+   *outdated* or *unverifiable*, with a supporting quote for each citation, which the
+   code then checks.
 5. The extension shows a card per claim and highlights each claim's text on the page.
 
 ![Side panel with results](docs/images/side-panel.png)
@@ -61,7 +68,7 @@ flowchart LR
 
 | Service | Used for | Get a key | Required |
 |---|---|---|---|
-| [Nebius Token Factory](https://tokenfactory.nebius.com) | LLM calls (OpenAI-compatible API) | Sign in → API keys → create | yes |
+| [Nebius Token Factory](https://tokenfactory.nebius.com) | LLM calls to NVIDIA Nemotron (OpenAI-compatible API) | Sign in → API keys → create | yes |
 | [Tavily](https://app.tavily.com) | Web search (free tier available) | Sign up → API keys | yes |
 | [Google Fact Check Tools API](https://developers.google.com/fact-check/tools/api) | Existing fact-checks | Google Cloud Console → enable *Fact Check Tools API* → Credentials → *Create API key* | no |
 
@@ -102,12 +109,20 @@ Optional: see which models your Nebius account offers, and change `EXTRACTION_MO
 
 ```bash
 .venv/bin/python scripts/list_models.py          # all models
-.venv/bin/python scripts/list_models.py qwen     # filter by name
+.venv/bin/python scripts/list_models.py nemotron # filter by name
 ```
 
-The defaults (`deepseek-ai/DeepSeek-V4-Pro` for extraction, `zai-org/GLM-5.3` for
-verification) were chosen for reliable JSON output and speed. Prefer instruction-following
-models. Some reasoning models take over a minute per call.
+The defaults are NVIDIA Nemotron models:
+
+| Setting | Default | Why |
+|---|---|---|
+| `EXTRACTION_MODEL` | `nvidia/nemotron-3-super-120b-a12b` | 6/6 correct on the extraction test: valid JSON first try, exact spans, right claim types. Median about 10s. Nano was also correct but slower and much less predictable (10–50s) |
+| `VERIFICATION_MODEL` | `nvidia/Nemotron-3-Ultra-550b-a55b` | The largest Nemotron. Grounded verdicts; good with non-English text |
+
+Tested alternatives that also work: `deepseek-ai/DeepSeek-V4-Pro` (extraction),
+`zai-org/GLM-5.3` (verification), `Qwen/Qwen3-235B-A22B-Instruct-2507` (either). The
+Nemotron-3 models reason internally before answering. That costs extra output tokens,
+and the reasoning text never shows up in the result.
 
 ### 3. Run the backend
 
@@ -192,8 +207,9 @@ cd ..
 node --test extension/tests/    # text matcher used for highlighting (Node 18+)
 ```
 
-**Smoke test** (backend must be running). Sends four sample texts (false, true,
-opinion, time-sensitive) and prints the full JSON results:
+**Smoke test** (backend must be running). Sends eight sample texts and prints the full
+JSON results: false, true, opinion and time-sensitive in English, plus a false and a
+true claim each in Russian and Hebrew.
 
 ```bash
 cd backend && .venv/bin/python scripts/smoke_test.py
@@ -224,8 +240,8 @@ quotes, a social-media-style post with a "Simulate feed re-render" button, and a
 article. Serve it with `cd extension && python3 -m http.server 8080` and open
 http://localhost:8080/test-page.html.
 
-Uncached checks cost LLM tokens and Tavily searches, roughly 2 LLM calls, 2–4k tokens and
-1–3 searches per factual claim. Each request logs these. Results are cached in
+Uncached checks cost LLM tokens and Tavily searches: roughly 2 LLM calls, 4–8k tokens,
+2–4 searches and 12–18 seconds per factual claim with the default models. Each request logs these. Results are cached in
 `backend/cache.db` for 24 hours; delete the file to clear it. Start the backend with
 `LOG_LEVEL=DEBUG` to log each claim's search queries, evidence and raw verdict.
 
@@ -233,6 +249,15 @@ Uncached checks cost LLM tokens and Tavily searches, roughly 2 LLM calls, 2–4k
 
 - **Breaking news.** Verdicts can only be as current as the search results. Very recent
   events may come back *unverifiable*, or be judged on older reporting.
+- **Explanation language.** Explanations are meant to match the selected text's
+  language. In testing this held for 3 of 4 non-English claims; one Hebrew claim got an
+  English explanation.
+- **Speed and cost.** The default Nemotron models reason internally, so a check takes
+  about 12–18 s per factual claim and uses roughly twice the output tokens of the
+  non-reasoning alternatives listed above.
+- **Strict citations.** A citation whose quote can't be found in the evidence is
+  removed, even when the fact is actually there. So an explanation can occasionally
+  contain a correct sentence with no citation.
 - **Model inconsistency.** The same claim can get a different verdict on different runs.
   For example, a claim about a former office holder came back *outdated* in one run and
   *contradicted* in another. Use `scripts/eval.py` to measure agreement before trusting
